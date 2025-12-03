@@ -13,8 +13,6 @@
 
 **TFCM** is an experimental deep learning model designed to solve the "washed out" color problem common in traditional CNNs. By processing images in the frequency domain, it separates structural details from semantic understanding.
 
-This repository contains the training code, inference logic, and pretrained weights.
-
 *Training and inference code coming soon*
 
 ## Architecture

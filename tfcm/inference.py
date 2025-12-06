@@ -7,8 +7,8 @@ from tqdm import tqdm
 from .model import ColorizerV14
 from .utils import rgb_to_lab, lab_to_rgb, dwt_init, idwt_init
 
-# Update this URL to point to your actual Github Release file
-WEIGHTS_URL = "https://github.com/Juste-Leo2/TFCM/releases/download/v1.0/tfcm.pth"
+# Ton lien release
+WEIGHTS_URL = "https://github.com/Juste-Leo2/TFCM/releases/download/v1.0.0/tfcm.pth"
 WEIGHTS_NAME = "tfcm.pth"
 
 class Colorizer:
@@ -26,27 +26,43 @@ class Colorizer:
         ])
 
     def load_weights(self):
-        path = os.path.join(os.path.expanduser("~/.cache/tfcm"), WEIGHTS_NAME)
-        if not os.path.exists(path):
-            print(f"Weights not found. Downloading to {path}...")
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            response = requests.get(WEIGHTS_URL, stream=True)
-            total_size = int(response.headers.get('content-length', 0))
-            with open(path, 'wb') as f, tqdm(total=total_size, unit='B', unit_scale=True) as bar:
-                for data in response.iter_content(1024):
-                    bar.update(len(data))
-                    f.write(data)
+        cache_dir = os.path.join(os.path.expanduser("~/.cache/tfcm"))
+        path = os.path.join(cache_dir, WEIGHTS_NAME)
         
+        if not os.path.exists(path):
+            print(f"⬇️ Downloading weights to {path}...")
+            os.makedirs(cache_dir, exist_ok=True)
+            try:
+                response = requests.get(WEIGHTS_URL, stream=True)
+                response.raise_for_status() 
+                total_size = int(response.headers.get('content-length', 0))
+                
+                with open(path, 'wb') as f, tqdm(total=total_size, unit='B', unit_scale=True) as bar:
+                    for data in response.iter_content(1024):
+                        bar.update(len(data))
+                        f.write(data)
+                print("✅ Download complete.")
+            except Exception as e:
+                print(f"❌ Download failed: {e}")
+                if os.path.exists(path): os.remove(path)
+                return
+
         try:
-            self.model.load_state_dict(torch.load(path, map_location=self.device))
+            state_dict = torch.load(path, map_location=self.device, weights_only=False)
+            self.model.load_state_dict(state_dict)
+            print("✅ Weights loaded successfully.")
         except Exception as e:
-            print(f"Error loading weights: {e}")
+            print(f"❌ Error loading weights: {e}")
+            print("⚠️ The cached file might be corrupted. Deleting it now.")
+            if os.path.exists(path):
+                os.remove(path)
+            raise e 
 
     def process(self, image_path):
         if isinstance(image_path, str):
             img_pil = Image.open(image_path).convert('RGB')
         else:
-            img_pil = image_path.convert('RGB') # Assume PIL Image
+            img_pil = image_path.convert('RGB')
             
         img_tensor = self.transform(img_pil).unsqueeze(0).to(self.device)
         
@@ -55,9 +71,9 @@ class Colorizer:
             L = lab[:, 0:1]
             gray_3ch = torch.cat([L, L, L], dim=1)
             
-            # Forward
             feats = self.model.brain(self.norm(gray_3ch))[0]
-            if feats.shape[2:] != (L.shape[2]//8, L.shape[3]//8): # Handle size mismatch if any
+            
+            if feats.shape[2:] != (L.shape[2]//8, L.shape[3]//8):
                  feats = torch.nn.functional.interpolate(feats, size=(L.shape[2]//8, L.shape[3]//8))
 
             L_dwt = dwt_init(L)
